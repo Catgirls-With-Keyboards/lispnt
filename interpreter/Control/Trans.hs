@@ -39,12 +39,26 @@ instance MonadTrans MaybeT where
 
 newtype EitherT e m a = EitherT { runEitherT :: m (Either e a) }
 
+mirror :: (Functor m) => EitherT e m a -> EitherT a m e
+mirror = EitherT . (<$>) inner . runEitherT
+    where
+        inner (Left e) = Right e
+        inner (Right a) = Left a
+
 instance (Functor f) => Functor (EitherT e f) where
     fmap f = EitherT . (fmap . fmap) f . runEitherT
 
 instance (Applicative f) => Applicative (EitherT e f) where
     pure = EitherT . pure . pure
     (<*>) = (EitherT .) . (. runEitherT) . (<*>) . (<$>) (<*>) . runEitherT
+
+instance (Applicative f, Monoid e) => Alternative (EitherT e f) where
+    empty = EitherT . pure $ Left mempty
+    (<|>) (EitherT ma) (EitherT mb) = EitherT $ choose <$> ma <*> mb
+        where
+            choose ma@(Right _) _ = ma
+            choose _ mb@(Right _) = mb
+            choose (Left a) (Left b) = Left $ a <> b
 
 instance (Monad m) => Monad (EitherT e m) where
     (>>=) = flip $ (EitherT .) . (. runEitherT) . travbind . (runEitherT .)
@@ -59,7 +73,7 @@ instance MonadTrans (EitherT e) where
 
 {- MeitherT -}
 
-type MeitherT e m = MaybeT (EitherT e m)
+type MeitherT e = EitherT (Maybe e)
 
 {- StateT -}
 
