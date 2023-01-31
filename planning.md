@@ -1,6 +1,6 @@
 
 ```lisp
-(defun 'average (args...)
+(defun 'average (vargs...)
  (/ (+ (... args)) / (lccdr args)))
 
 (defun 'average
@@ -13,10 +13,12 @@
 )
 ```
 
+
 ```js
-atom   <- PLUS / MINUS / MULT / DIV / MOD
+atom   <- TICK IDENT
+        / PLUS / MINUS / MULT / DIV / MOD
         / FN / LET / MACR / EVAL / CURRY
-        / GLOBAL / 
+        / GLOBAL / DEFUN
         / ATOM / SEXPR
         / EXPANDS
         / PRINTABLE
@@ -26,12 +28,11 @@ atom   <- PLUS / MINUS / MULT / DIV / MOD
         / NUMBER
         / CHAR
 
-builtin <- LCBRACK { /* Yoink, count occurrences of '}'. */ } RCBRACK 
-
 sexpr  <- atom
-        / builtin
+        / IDENT
+        / BUILTIN
         / STRING
-        / (HASH / EXCLAIM)? OPEN sexpr* CLOSE
+        / (HASH / EXCLAIM)? OPEN sexpr* CLOSE (COLONS IDENT)?
 ```
 
 ```c
