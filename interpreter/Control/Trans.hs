@@ -39,6 +39,7 @@ instance MonadTrans MaybeT where
 
 newtype EitherT e m a = EitherT { runEitherT :: m (Either e a) }
 
+-- swaps Left with Right
 mirror :: (Functor m) => EitherT e m a -> EitherT a m e
 mirror = EitherT . (<$>) inner . runEitherT
     where
