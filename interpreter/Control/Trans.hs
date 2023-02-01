@@ -1,9 +1,8 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE QuantifiedConstraints #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TupleSections #-}
-module Control.Trans (MonadTrans(..)) where
+module Control.Trans where
 import Control.Applicative (Alternative(..))
 
 class (forall m. Monad m => Monad (t m)) => MonadTrans t where
@@ -12,6 +11,14 @@ class (forall m. Monad m => Monad (t m)) => MonadTrans t where
 {- MaybeT -}
 
 newtype MaybeT m a = MaybeT { runMaybeT :: m (Maybe a) }
+
+runMaybeT' :: (Monad m) => m b -> (a -> m b) -> MaybeT m a -> m b
+runMaybeT' mb f mma = do
+    ma <- runMaybeT mma
+    maybe mb f ma
+
+instance (forall a'. Show a' => Show (m a'), Show a) => Show (MaybeT m a) where
+    show = show . runMaybeT
 
 instance (Functor f) => Functor (MaybeT f) where
     fmap f = MaybeT . (fmap . fmap) f . runMaybeT
@@ -28,9 +35,7 @@ instance (Monad m) => Monad (MaybeT m) where
     (>>=) = flip $ (MaybeT .) . (. runMaybeT) . travbind . (runMaybeT .)
         where
             travbind :: (Monad m) => (a -> m (Maybe b)) -> (m (Maybe a) -> m (Maybe b))
-            travbind f = (=<<) $ \case
-                Nothing -> pure Nothing
-                Just a -> f a
+            travbind f = (=<<) $ maybe (pure Nothing) f
 
 instance MonadTrans MaybeT where
     lift = MaybeT . (<$>) pure
@@ -39,12 +44,13 @@ instance MonadTrans MaybeT where
 
 newtype EitherT e m a = EitherT { runEitherT :: m (Either e a) }
 
--- swaps Left with Right
-mirror :: (Functor m) => EitherT e m a -> EitherT a m e
-mirror = EitherT . (<$>) inner . runEitherT
-    where
-        inner (Left e) = Right e
-        inner (Right a) = Left a
+runEitherT' :: (Monad m) => (e -> m b) -> (a -> m b) -> EitherT e m a -> m b
+runEitherT' f g mma = do
+    ma <- runEitherT mma
+    either f g ma
+
+instance (forall a'. Show a' => Show (m a'), Show a, Show e) => Show (EitherT e m a) where
+    show = show . runEitherT
 
 instance (Functor f) => Functor (EitherT e f) where
     fmap f = EitherT . (fmap . fmap) f . runEitherT
@@ -65,16 +71,10 @@ instance (Monad m) => Monad (EitherT e m) where
     (>>=) = flip $ (EitherT .) . (. runEitherT) . travbind . (runEitherT .)
         where
             travbind :: (Monad m) => (a -> m (Either e b)) -> (m (Either e a) -> m (Either e b))
-            travbind f = (=<<) $ \case
-                Left e -> pure (Left e)
-                Right a -> f a
+            travbind f = (=<<) $ either (pure . Left) f
 
 instance MonadTrans (EitherT e) where
     lift = EitherT . (<$>) pure
-
-{- MeitherT -}
-
-type MeitherT e = EitherT (Maybe e)
 
 {- StateT -}
 
@@ -87,6 +87,11 @@ get = StateT $ \s -> pure (s, s)
 -- assigns to the 'background' value
 set :: (Applicative m) => s -> StateT s m ()
 set s = StateT $ \s' -> pure (s, ())
+
+runStateT' :: (Monad m) => m s -> StateT s m a -> m a
+runStateT' ms mma = do
+    s <- ms
+    snd <$> runStateT mma s
 
 instance (Functor f) => Functor (StateT s f) where
     fmap f = StateT . (fmap . fmap . fmap) f . runStateT
