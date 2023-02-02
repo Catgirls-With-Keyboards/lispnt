@@ -2,15 +2,21 @@ module ParserComb where
 import Control.Applicative (Alternative(..))
 import Control.Trans
 
-data Ctx s = Ctx { index :: Int, rest :: [s] } deriving (Show)
+data Ctx s = Ctx { index :: Int, rest :: [s] }
+    deriving (Show)
 
-newtype Err e = Err { msg :: e } deriving (Show)
+data Err
+    = Silent
+    | Err Int String
+    | Context Int String Err
+    deriving (Show)
 
-instance Functor Err where
-    fmap f = Err . f . msg
+instance Semigroup Err where
+    (<>) Silent = id
+    (<>) message = const message
 
-instance Semigroup (Err e) where
-    (<>) = const
+instance Monoid Err where
+    mempty = Silent
 
 type ParserT s m a = StateT (Ctx s) m a
 
@@ -65,6 +71,71 @@ least1Till ma mb = do
 most1 :: (Monad m, Alternative m) => ParserT s m a -> ParserT s m [a]
 most1 ma = fst <$> most1Till ma (pure ())
 
+most0InterlaceTill :: (Monad m, Alternative m) => ParserT s m a -> ParserT s m b -> ParserT s m c -> ParserT s m (Either ([(a, b)], (a, c)) c)
+most0InterlaceTill ma mb mc = (Left <$> mostTill ((,) <$> ma <*> mb) ((,) <$> ma <*> mc)) <|> (Right <$> mc)
+
+least0InterlaceTill :: (Monad m, Alternative m) => ParserT s m a -> ParserT s m b -> ParserT s m c -> ParserT s m (Either ([(a, b)], (a, c)) c)
+least0InterlaceTill ma mb mc = (Right <$> mc) <|> (Left <$> mostTill ((,) <$> ma <*> mb) ((,) <$> ma <*> mc))
+
+most0Interlace :: (Monad m, Alternative m) => ParserT s m a -> ParserT s m b -> ParserT s m (Maybe ([(a, b)], a))
+most0Interlace ma mb = do
+    res <- most0InterlaceTill ma mb (pure ())
+    case res of
+        Right () -> pure Nothing
+        Left (abs, (a, ())) -> pure $ Just (abs, a)
+
+most1InterlaceTill :: (Monad m, Alternative m) => ParserT s m a -> ParserT s m b -> ParserT s m c -> ParserT s m ([(a, b)], (a, c))
+most1InterlaceTill ma mb mc = mostTill ((,) <$> ma <*> mb) ((,) <$> ma <*> mc)
+
+least1InterlaceTill :: (Monad m, Alternative m) => ParserT s m a -> ParserT s m b -> ParserT s m c -> ParserT s m ([(a, b)], (a, c))
+least1InterlaceTill ma mb mc = leastTill ((,) <$> ma <*> mb) ((,) <$> ma <*> mc)
+
+most1Interlace :: (Monad m, Alternative m) => ParserT s m a -> ParserT s m b -> ParserT s m ([(a, b)], a)
+most1Interlace ma mb = fmap fst <$> most1InterlaceTill ma mb (pure ())
+
+most0PaddedTill :: (Monad m, Alternative m) => ParserT s m a -> ParserT s m b -> ParserT s m c -> ParserT s m ([a], c)
+most0PaddedTill ma mb mc = do
+    res <- most0InterlaceTill ma mb mc
+    case res of
+        Right c -> pure ([], c)
+        Left (abs, (a, c)) -> pure ((fst <$> abs) ++ [a], c)
+
+least0PaddedTill :: (Monad m, Alternative m) => ParserT s m a -> ParserT s m b -> ParserT s m c -> ParserT s m ([a], c)
+least0PaddedTill ma mb mc = do
+    res <- least0InterlaceTill ma mb mc
+    case res of
+        Right c -> pure ([], c)
+        Left (abs, (a, c)) -> pure ((fst <$> abs) ++ [a], c)
+
+most0Padded :: (Monad m, Alternative m) => ParserT s m a -> ParserT s m b -> ParserT s m [a]
+most0Padded ma mb = do
+    res <- most0Interlace ma mb
+    case res of
+        Just (abs, a) -> pure $ (fst <$> abs) ++ [a]
+        Nothing -> pure []
+
+most1PaddedTill :: (Monad m, Alternative m) => ParserT s m a -> ParserT s m b -> ParserT s m c -> ParserT s m ([a], c)
+most1PaddedTill ma mb mc = do
+    (abs, (a, c)) <- most1InterlaceTill ma mb mc
+    pure ((fst <$> abs) ++ [a], c)
+
+least1PaddedTill :: (Monad m, Alternative m) => ParserT s m a -> ParserT s m b -> ParserT s m c -> ParserT s m ([a], c)
+least1PaddedTill ma mb mc = do
+    (abs, (a, c)) <- least1InterlaceTill ma mb mc
+    pure ((fst <$> abs) ++ [a], c)
+
+most1Padded :: (Monad m, Alternative m) => ParserT s m a -> ParserT s m b -> ParserT s m [a]
+most1Padded ma mb = do
+    (abs, a) <- most1Interlace ma mb
+    pure $ (fst <$> abs) ++ [a]
+
+notProceeding :: (Monad m, Alternative m) => ParserT s m a -> ParserT s m ()
+notProceeding ma = do
+    state <- get
+    x <- True <$ ma <|> pure False -- garunteed to succeed
+    set state
+    if x then empty else pure ()
+
 end :: (Monad m, Alternative m) => ParserT s m ()
 end = do
     Ctx i ss <- get
@@ -94,11 +165,11 @@ matchSection ms = lift ms >>= matchSection'
         matchSection' [] = pure []
         matchSection' (s:ss) = (:) <$> matchPred (== s) <*> matchSection' ss
 
-errBind :: (Monad m, Alternative m) => (e -> m e) -> ParserT s (EitherT e m) a -> ParserT s (EitherT e m) a
+errBind :: (Monad m) => (e -> m e) -> ParserT s (EitherT e m) a -> ParserT s (EitherT e m) a
 errBind f ma = StateT $ EitherT . runEitherT' (fmap Left . f) (pure . Right) . runStateT ma
 
-silence :: (Monad m, Alternative m, Monoid e) => ParserT s (EitherT e m) a -> ParserT s (EitherT e m) a
-silence = errBind $ pure . const mempty
+label :: (Monad m) => m e -> ParserT s (EitherT e m) a -> ParserT s (EitherT e m) a
+label e = errBind $ const e
 
-label :: (Monad m, Alternative m, Monoid e) => m e -> ParserT s (EitherT e m) a -> ParserT s (EitherT e m) a
-label e = errBind $ (<*>) ((<>) <$> e) . pure
+silence :: (Monad m, Monoid e) => ParserT s (EitherT e m) a -> ParserT s (EitherT e m) a
+silence = label $ pure mempty

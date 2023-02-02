@@ -1,0 +1,12 @@
+
+def empty = *
+def node * * = *
+
+def pushreverse * * = *
+
+let pushreverse empty $ys = ys
+let pushreverse (node $x $xs) $ys = pushreverse xs (node x ys)
+
+def reverse * = *
+
+let reverse $xs = pushreverse xs empty
