@@ -21,7 +21,7 @@ main = do
     let formatLn (l, n) = "at " <> show l <> ":" <> show n
     let errPrint = putStrLn . prettyPrint (formatLn . lineChar)
 
-    let result = runParserT' (pure txt) parseTopLevel
+    let result = runParserT' (pure txt) $ parseOptionalWhiteSpace *> parseExpr <* parseOptionalWhiteSpace <* eof
     case result of
         EitherT (Identity (Left msg)) -> errPrint msg
         EitherT (Identity (Right res)) -> print res

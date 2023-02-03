@@ -2,22 +2,19 @@ module Lispnt.AST where
 
 type Identifier = String
 
-data Type
-    = Any
+data Pattern
+    = PCall Pattern Pattern
+    | PAtom Identifier
+    | PVal Identifier
     deriving (Show)
 
-data TopLvlDef
-    = Def Identifier [Type] Type
-    | Let Identifier [Pattern] Expr
-    deriving (Show) 
-
-data Pattern
-    = PatternCall Pattern Pattern
-    | PatternValue Identifier
-    | PatternMatch Identifier
+data Behaviour
+    = Define Pattern Expr
     deriving (Show)
 
 data Expr
-    = ExprCall Expr Expr
-    | ExprValue Identifier
+    = ECall Expr Expr
+    | EAtom Identifier
+    | EVal Identifier
+    | EScope [Behaviour] Expr
     deriving (Show)

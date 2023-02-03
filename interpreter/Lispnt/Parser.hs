@@ -42,17 +42,11 @@ parseWhiteSpace = errlabel "expected spacing" $ most1 (matchPred Ch.isSpace)
 
 parseIdentifier :: Parser Identifier
 parseIdentifier = errlabel "expected identifier" $ do
-    notProceeding $ parseString "def" <|> parseString "let"
     most1 (matchPred Ch.isLetter)
-    where
-        reversations = foldl (<|>) empty $ parseString <$> ["def", "let"]
-
-parseType :: Parser Type
-parseType = errlabel "expected type" $ Any <$ parseString "*" -- untyped
 
 parsePolish :: (a -> a -> a) -> Parser a -> Parser a
 parsePolish comb ma = ( do
-    parseString "("
+    silence $ parseString "("
     func <- ( do
         parseOptionalWhiteSpace
         self
@@ -81,44 +75,37 @@ parsePolishOpen comb ma = do
     where
         base = parsePolish comb ma
 
-parseExprBase :: Parser Expr
-parseExprBase = ExprValue <$> parseIdentifier
+parsePattern :: Parser Pattern
+parsePattern = context "pattern" $ parsePolishOpen PCall base
+    where
+        base = fmap PAtom (silence $ parseString ":" *> parseIdentifier)
+            <|> fmap PVal (silence parseIdentifier)
+            <|> errmsg "expected identifier"
 
-parsePatternBase :: Parser Pattern
-parsePatternBase = (PatternValue <$> parseIdentifier)
-    <|> (parseString "$" *> fmap PatternMatch parseIdentifier)
+parseExpr :: Parser Expr
+parseExpr = context "expression" $ parsePolishOpen ECall base
+    where
+        base = fmap EAtom (silence $ parseString ":" *> parseIdentifier)
+            <|> fmap EVal (silence parseIdentifier)
+            <|> (do
+                silence $ parseString "{"
+                parseOptionalWhiteSpace
+                (behaviours, _) <- most0PaddedTill
+                    parseBehaviour
+                    parseOptionalWhiteSpace
+                    $ parseOptionalWhiteSpace *> parseString "}"
+                parseOptionalWhiteSpace
+                EScope behaviours <$> parseExpr
+            )
+            <|> errmsg "expected identifier or scope"
 
-parseDef :: Parser TopLvlDef
-parseDef = silence (parseString "def") *> context "def block" (do
-    parseWhiteSpace
-    name <- parseIdentifier
-    (args, result) <- mostTill (do
-        parseWhiteSpace
-        parseType)
-        (( do
-        parseWhiteSpace
-        parseString "="
-        parseWhiteSpace
-        parseType
-        ) <|> pure Any)
-    pure $ Def name args result)
-
-parseLet :: Parser TopLvlDef
-parseLet = silence (parseString "let") *> context "let block" (do
-    parseWhiteSpace
-    name <- parseIdentifier
-    (args, result) <- mostTill (do
-        parseWhiteSpace
-        parsePolish PatternCall parsePatternBase)
-        (do
-        parseWhiteSpace
-        parseString "="
-        parseWhiteSpace
-        parsePolishOpen ExprCall parseExprBase)
-    pure $ Let name args result)
-
-parseTopLevelDefinition :: Parser TopLvlDef
-parseTopLevelDefinition = parseDef <|> parseLet <|> errmsg "expected top level definition"
-
-parseTopLevel :: Parser [TopLvlDef]
-parseTopLevel = (<$>) fst $ parseOptionalWhiteSpace *> most0PaddedTill parseTopLevelDefinition parseWhiteSpace (parseOptionalWhiteSpace *> eof)
+parseBehaviour :: Parser Behaviour
+parseBehaviour = context "behaviour definition" $ do
+    pat <- parsePattern
+    parseOptionalWhiteSpace
+    parseString "="
+    parseOptionalWhiteSpace
+    exp <- parseExpr
+    parseOptionalWhiteSpace
+    parseString ";"
+    pure $ Define pat exp
