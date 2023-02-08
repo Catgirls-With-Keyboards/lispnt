@@ -23,4 +23,3 @@ memoCall :: (Monad m, Alternative m, Eq k) => k -> (k -> m v) -> MemoT k v m v
 memoCall k f = recall k <|> do
     memorise k (f k)
     recall k
-

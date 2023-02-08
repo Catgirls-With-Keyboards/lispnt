@@ -8,7 +8,20 @@ import Lispnt.AST
 import Data.Functor.Identity (Identity(..))
 import System.Posix
 
-type Parser a = ParserT Char (EitherT Err IO) a
+data Err
+    = Silent
+    | Err String Integer String
+    | Context String Integer String Err
+    deriving (Show)
+
+instance Semigroup Err where
+    (<>) Silent = id
+    (<>) message = const message
+
+instance Monoid Err where
+    mempty = Silent
+
+type Parser a = ParserT String Char (EitherT Err IO) a
 
 -- msg = "failed to xyz"
 errlabel :: String -> Parser a -> Parser a

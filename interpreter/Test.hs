@@ -1,5 +1,5 @@
 import Lispnt.Parser
-import ParserComb (runParserT', Err (..))
+import ParserComb (runParserT')
 import Control.Monad.Identity (Identity(..))
 import Control.Trans (EitherT(..))
 import Data.Maybe (listToMaybe, fromMaybe)
