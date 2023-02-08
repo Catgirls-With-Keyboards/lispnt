@@ -176,5 +176,5 @@ condense :: (Monad m, Monoid f) => ParserT i s (EitherT e m) [EitherT f m a] -> 
 condense ma = do
     foldr (\a as -> (:) <$> a <*> as) (pure []) <$> ma
 
-bundle :: (Monad m, Monoid e) => ParserT i s (EitherT e m) (EitherT e m a) -> ParserT i s (EitherT e m) a
+bundle :: (Monad m) => ParserT i s (EitherT e m) (EitherT e m a) -> ParserT i s (EitherT e m) a
 bundle ma = ma >>= lift

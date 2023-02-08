@@ -85,7 +85,7 @@ instance (Applicative f) => Applicative (MaybeT f) where
 
 instance (Applicative f) => Alternative (MaybeT f) where
     empty = MaybeT $ pure Nothing
-    (MaybeT ma) <|> (MaybeT mb) = MaybeT $ (<|>) <$> ma <*> mb
+    (<|>) (MaybeT ma) (MaybeT mb) = MaybeT $ (<|>) <$> ma <*> mb
 
 instance (Monad m) => Monad (MaybeT m) where
     (>>=) = flip $ (MaybeT .) . (. runMaybeT) . travbind . (runMaybeT .)
@@ -111,30 +111,25 @@ instance (forall a'. Show a' => Show (m a'), Show a, Show e) => Show (EitherT e 
 instance (Functor f) => Functor (EitherT e f) where
     fmap f = EitherT . (fmap . fmap) f . runEitherT
 
-instance (Applicative f, Monoid e) => Applicative (EitherT e f) where
+instance (Applicative f) => Applicative (EitherT e f) where
     pure = EitherT . pure . pure
-    (EitherT ma) <*> (EitherT mb) = EitherT $ combine <$> ma <*> mb
-        where
-            combine (Left a) (Left b) = Left $ a <> b
-            combine (Left a) _ = Left a
-            combine _ (Left b) = Left b
-            combine (Right f) (Right x) = Right $ f x
+    (<*>) = (EitherT .) . (. runEitherT) . (<*>) . (<$>) (<*>) . runEitherT
 
 instance (Applicative f, Monoid e) => Alternative (EitherT e f) where
     empty = EitherT . pure $ Left mempty
-    (EitherT ma) <|> (EitherT mb) = EitherT $ choose <$> ma <*> mb
+    (<|>) (EitherT ma) (EitherT mb) = EitherT $ choose <$> ma <*> mb
         where
             choose ma@(Right _) _ = ma
             choose _ mb@(Right _) = mb
             choose (Left a) (Left b) = Left $ a <> b
 
-instance (Monad m, Monoid e) => Monad (EitherT e m) where
+instance (Monad m) => Monad (EitherT e m) where
     (>>=) = flip $ (EitherT .) . (. runEitherT) . travbind . (runEitherT .)
         where
             travbind :: (Monad m) => (a -> m (Either e b)) -> (m (Either e a) -> m (Either e b))
             travbind f = (=<<) $ either (pure . Left) f
 
-instance (Monoid e) => MonadTrans (EitherT e) where
+instance MonadTrans (EitherT e) where
     lift = EitherT . (<$>) pure
 
 {- StateT -}
