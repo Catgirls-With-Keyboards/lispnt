@@ -7,7 +7,7 @@ import Control.Applicative (Alternative(..))
 
 class (forall m. Monad m => Monad (t m)) => MonadTrans t where
     lift :: (Monad m) => m a -> t m a
-
+    
 {- MaybeT -}
 
 newtype MaybeT m a = MaybeT { runMaybeT :: m (Maybe a) }
@@ -115,3 +115,29 @@ instance (Monad m) => Monad (StateT s m) where
 
 instance MonadTrans (StateT s) where
     lift a = StateT $ \s -> (,) s <$> a
+
+{- ArrowT -}
+
+newtype ArrowT i m a = ArrowT {runArrowT :: i -> m a}
+
+runArrowT' :: (Monad m) => m i -> ArrowT i m a -> m a
+runArrowT' = flip $ (=<<) . runArrowT
+
+instance (Functor f) => Functor (ArrowT i f) where
+    fmap f (ArrowT ma) = ArrowT $ fmap f . ma
+
+instance (Applicative f) => Applicative (ArrowT i f) where
+    pure = ArrowT . const . pure
+    (ArrowT mf) <*> (ArrowT ma) = ArrowT $ (<*>) <$> mf <*> ma
+
+instance (Alternative f) => Alternative (ArrowT i f) where
+    empty = ArrowT $ const empty
+    (ArrowT ma) <|> (ArrowT mb) = ArrowT $ (<|>) <$> ma <*> mb
+
+instance (Monad m) => Monad (ArrowT i m) where
+    (ArrowT ma) >>= f = ArrowT $ \i -> do
+        a <- ma i
+        runArrowT (f a) i
+
+instance MonadTrans (ArrowT i) where
+    lift = ArrowT . const

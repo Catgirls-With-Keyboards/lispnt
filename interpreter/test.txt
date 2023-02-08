@@ -5,6 +5,8 @@
 
     :mod :true = :true;
     :mod :false = :false;
+
+    :mod :test = "." / "testdep.txt";
 }
 
 :mod

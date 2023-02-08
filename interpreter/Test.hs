@@ -5,10 +5,15 @@ import Control.Trans (EitherT(..))
 import Data.Maybe (listToMaybe, fromMaybe)
 
 -- at i = "at ..."
-prettyPrint :: (Int -> String) -> Err -> String
-prettyPrint at Silent = "a silent error occured"
-prettyPrint at (Err i s) = s <> " " <> at i -- failed to xyz at ...
-prettyPrint at (Context i s e) = prettyPrint at e <> "\nin " <> s <> " " <> at i --  ... \n in secion abc at ...
+-- prettyPrint :: (Integer -> String) -> Err -> String
+-- prettyPrint at Silent = "a silent error occured"
+-- prettyPrint at (Err file i s) = s <> " " <> at i <> "in file " <> file -- failed to xyz at ...
+-- prettyPrint at (Context file i s e) = prettyPrint at e <> "\nin " <> s <> " " <> at i <> "in file " <> file --  ... \n in secion abc at ...
+
+errPrint :: Err -> String
+errPrint Silent = "a silent error occured"
+errPrint (Err file i s) = s <> " at " <> show i <> " in file " <> file -- failed to xyz at ...
+errPrint (Context file i s e) = errPrint e <> "\nin " <> s <> " at " <> show i <> " in file " <> file --  ... \n in secion abc at ...
 
 main :: IO ()
 main = do
@@ -16,12 +21,12 @@ main = do
 
     putStrLn txt
 
-    let nlOccurances = reverse $ [n | (c, n) <- txt `zip` [0..], c == '\n'] `zip` [1..]
-    let lineChar i = fromMaybe (0, i) $ listToMaybe [(l, i - (n + 1)) | (n, l) <- nlOccurances, n < i]
-    let formatLn (l, n) = "at " <> show l <> ":" <> show n
-    let errPrint = putStrLn . prettyPrint (formatLn . lineChar)
+    -- let nlOccurances = reverse $ [n | (c, n) <- txt `zip` [0..], c == '\n'] `zip` [1..]
+    -- let lineChar i = fromMaybe (0, i) $ listToMaybe [(l, i - (n + 1)) | (n, l) <- nlOccurances, n < i]
+    -- let formatLn (l, n) = "at " <> show l <> ":" <> show n
+    -- let errPrint = prettyPrint (formatLn . lineChar)
 
-    let result = runParserT' (pure txt) $ parseOptionalWhiteSpace *> parseExpr <* parseOptionalWhiteSpace <* eof
+    result <- runEitherT $ runParserT' "test.txt" (pure txt) $ parseOptionalWhiteSpace *> parseExpr <* parseOptionalWhiteSpace <* eof
     case result of
-        EitherT (Identity (Left msg)) -> errPrint msg
-        EitherT (Identity (Right res)) -> print res
+        (Left msg) -> putStrLn $ errPrint msg
+        (Right res) -> print res

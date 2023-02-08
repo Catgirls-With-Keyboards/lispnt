@@ -2,13 +2,13 @@ module ParserComb where
 import Control.Applicative (Alternative(..))
 import Control.Trans
 
-data Ctx s = Ctx { index :: Int, rest :: [s] }
+data Ctx s = Ctx { file :: String, index :: Integer, rest :: [s] }
     deriving (Show)
 
 data Err
     = Silent
-    | Err Int String
-    | Context Int String Err
+    | Err String Integer String
+    | Context String Integer String Err
     deriving (Show)
 
 instance Semigroup Err where
@@ -20,8 +20,8 @@ instance Monoid Err where
 
 type ParserT s m a = StateT (Ctx s) m a
 
-runParserT' :: (Monad m) => m [s] -> ParserT s m a -> m a
-runParserT' = runStateT' . fmap (Ctx 0)
+runParserT' :: (Monad m) => String -> m [s] -> ParserT s m a -> m a
+runParserT' file = runStateT' . fmap (Ctx file 0)
 
 mostTill :: (Monad m, Alternative m) => ParserT s m a -> ParserT s m b -> ParserT s m ([a], b)
 mostTill ma mb = ( do
@@ -138,18 +138,18 @@ notProceeding ma = do
 
 end :: (Monad m, Alternative m) => ParserT s m ()
 end = do
-    Ctx i ss <- get
+    Ctx file i ss <- get
     case ss of
         [] -> pure ()
         (s:ss') -> empty
 
 matching :: (Monad m, Alternative m) => (s -> m a) -> ParserT s m a
 matching f = do
-    Ctx i ss <- get
+    Ctx file i ss <- get
     (s, ss') <- case ss of
         [] -> empty
         (s:ss') -> pure (s, ss')
-    set $ Ctx (i + 1) ss'
+    set $ Ctx file (i + 1) ss'
 
     lift $ f s
 
