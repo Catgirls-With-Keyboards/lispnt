@@ -1,17 +1,19 @@
 module Lispnt.Parser where
 import Control.Applicative (Alternative(..), optional)
+import Control.Additive (Additive(..))
 import Control.Trans
-import Control.Monad.Identity (Identity)
+import Control.Monad.Identity (Identity(..))
 import ParserComb
+import AlterComb
 import Data.Char as Ch
 import Lispnt.AST
-import Data.Functor.Identity (Identity(..))
 import System.Posix
 
 data Err
     = Silent
     | Err String Integer String
     | Context String Integer String Err
+    | Bundle [Err]
     deriving (Show)
 
 instance Semigroup Err where
@@ -40,6 +42,12 @@ context :: String -> Parser a -> Parser a
 context msg ma = do
     Ctx file i _ <- get
     errBind (pure . Context file i msg) ma
+
+wrapErr :: (Monad m) => EitherT Err m a -> EitherT [Err] m a
+wrapErr = EitherT . runEitherT' (pure . Left . pure) (pure . Right)
+
+combineErrs :: (Monad m) => EitherT [Err] m a -> EitherT Err m a
+combineErrs = EitherT . runEitherT' (pure . Left . Bundle) (pure . Right)
 
 eof :: Parser ()
 eof = errlabel "expected end of file" end
@@ -108,6 +116,29 @@ parsePattern = context "pattern" $ parsePolishOpen PCall base
             <|> fmap PVal (silence parseIdentifier)
             <|> errmsg "expected identifier"
 
+behaviourSkip :: Parser ()
+--behaviourSkip = errlabel "failed to skip behaviour" $ () <$ leastTill (matchPred $ (/=) '}') (matchPred $ (==) ';')
+behaviourSkip = context "behaviour definition recovery" $ (<$) ()
+    $ leastTill parseSquigglies
+        $ leastTill (errlabel "unexpected \'}\'" $ matchPred $ (/=) '}') (matchPred $ (==) ';')
+    where
+        parseSquigglies :: Parser ()
+        parseSquigglies = do
+            leastTill (errlabel "unexpected \'}\'" $ matchPred $ (/=) '}') (matchPred $ (==) '{')
+            mostTill parseSquigglies $ leastTill matchAll (matchPred $ (==) '}')
+            pure ()
+
+parseBehaviour :: Parser Behaviour
+parseBehaviour = context "behaviour definition" $ do
+    pat <- parsePattern
+    parseOptionalWhiteSpace
+    parseString "="
+    parseOptionalWhiteSpace
+    exp <- parseExpr
+    parseOptionalWhiteSpace
+    parseString ";"
+    pure $ Define pat exp
+
 parseExpr :: Parser Expr
 parseExpr = context "expression" $ parsePolishOpen ECall base
     where
@@ -116,10 +147,12 @@ parseExpr = context "expression" $ parsePolishOpen ECall base
             <|> ( do
                 silence $ parseString "{"
                 parseOptionalWhiteSpace
-                (behaviours, _) <- most0PaddedTill
-                    parseBehaviour
+                (errBehaviours, _) <- mostPaddedTill
+                    (parseBehaviour `skipWith` behaviourSkip)
                     parseOptionalWhiteSpace
                     $ parseOptionalWhiteSpace *> parseString "}"
+                let errBehaviours' = combineErrs $ foldr (\mb mbs -> (:) <$> mb <+> mbs) (pure []) $ wrapErr <$> errBehaviours
+                behaviours <- lift errBehaviours'
                 parseOptionalWhiteSpace
                 EScope behaviours <$> parseExpr
             )
@@ -132,17 +165,6 @@ parseExpr = context "expression" $ parsePolishOpen ECall base
                 parseFile folder file
             )
             <|> errmsg "expected identifier, scope or import"
-
-parseBehaviour :: Parser Behaviour
-parseBehaviour = context "behaviour definition" $ do
-    pat <- parsePattern
-    parseOptionalWhiteSpace
-    parseString "="
-    parseOptionalWhiteSpace
-    exp <- parseExpr
-    parseOptionalWhiteSpace
-    parseString ";"
-    pure $ Define pat exp
 
 parseFile :: String -> String -> Parser Expr
 parseFile folder file = do

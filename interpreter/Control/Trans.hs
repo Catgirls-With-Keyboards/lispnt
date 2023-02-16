@@ -5,11 +5,15 @@
 {-# LANGUAGE KindSignatures #-}
 module Control.Trans where
 import Control.Applicative (Alternative(..))
+import Control.Additive (Additive(..))
 
 {- MonadTrans -}
 
 class (forall m. Monad m => Monad (t m)) => MonadTrans t where
     lift :: (Monad m) => m a -> t m a
+
+bundle :: (MonadTrans t, Monad m) => t m (m a) -> t m a
+bundle = (=<<) lift
 
 {- IdentityT -}
 
@@ -57,6 +61,9 @@ instance (Alternative (t (u f))) => Alternative (TransPipeT t u f) where
     empty = TransPipeT empty
     (TransPipeT ma) <|> (TransPipeT mb) = TransPipeT $ ma <|> mb
 
+instance (Additive (t (u f))) => Additive (TransPipeT t u f) where
+    (TransPipeT ma) <+> (TransPipeT mb) = TransPipeT $ ma <+> mb
+
 instance (Monad (t (u f))) => Monad (TransPipeT t u f) where
     (TransPipeT ma) >>= f = TransPipeT $ ma >>= (runTransPipeT . f)
 
@@ -87,6 +94,9 @@ instance (Applicative f) => Alternative (MaybeT f) where
     empty = MaybeT $ pure Nothing
     (<|>) (MaybeT ma) (MaybeT mb) = MaybeT $ (<|>) <$> ma <*> mb
 
+instance (Applicative f) => Additive (MaybeT f) where
+    (<+>) = (<*>)
+
 instance (Monad m) => Monad (MaybeT m) where
     (>>=) = flip $ (MaybeT .) . (. runMaybeT) . travbind . (runMaybeT .)
         where
@@ -116,12 +126,20 @@ instance (Applicative f) => Applicative (EitherT e f) where
     (<*>) = (EitherT .) . (. runEitherT) . (<*>) . (<$>) (<*>) . runEitherT
 
 instance (Applicative f, Monoid e) => Alternative (EitherT e f) where
-    empty = EitherT . pure $ Left mempty
+    empty = EitherT . pure . Left $ mempty
     (<|>) (EitherT ma) (EitherT mb) = EitherT $ choose <$> ma <*> mb
         where
             choose ma@(Right _) _ = ma
             choose _ mb@(Right _) = mb
             choose (Left a) (Left b) = Left $ a <> b
+
+instance (Applicative f, Monoid e) => Additive (EitherT e f) where
+    (<+>) (EitherT ma) (EitherT mb) = EitherT $ choose <$> ma <*> mb
+        where
+            choose (Right a) (Right b) = Right $ a b
+            choose (Left a) (Left b) = Left $ a <> b
+            choose (Left a) _ = Left a
+            choose _ (Left b) = Left b
 
 instance (Monad m) => Monad (EitherT e m) where
     (>>=) = flip $ (EitherT .) . (. runEitherT) . travbind . (runEitherT .)

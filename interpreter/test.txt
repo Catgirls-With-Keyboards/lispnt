@@ -1,12 +1,10 @@
 
 {
-    :true x y = x;
-    :false x y = y;
+    :true x y = { !; z = !; } x ;
+    :false x y = ! ;
 
     :mod :true = :true;
     :mod :false = :false;
-
-    :mod :test = "." / "testdep.txt";
 }
 
 :mod
